@@ -9,7 +9,8 @@ import {
   ZoomIn,
   ZoomOut,
   Undo2,
-  Redo2
+  Redo2,
+  ImagePlus
 } from 'lucide-react';
 import { MAX_SIZE } from '../constants';
 
@@ -28,6 +29,7 @@ interface HeaderProps {
   setExportScale: (scale: number) => void;
   resizeGrid: (newWidth: number, newHeight: number) => void;
   handleReferenceUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  handleImageImport: (e: React.ChangeEvent<HTMLInputElement>) => void;
   onUndo: () => void;
   onRedo: () => void;
   canUndo: boolean;
@@ -49,6 +51,7 @@ export function Header({
   setExportScale,
   resizeGrid,
   handleReferenceUpload,
+  handleImageImport,
   onUndo,
   onRedo,
   canUndo,
@@ -155,6 +158,10 @@ export function Header({
           <label className="flex items-center gap-1.5 px-3 py-1.5 text-stone-600 hover:bg-stone-100 rounded-md text-sm cursor-pointer" title="Open saved project (.json)">
             <FolderOpen size={16} /> <span className="hidden sm:inline">Open</span>
             <input type="file" accept=".json" onChange={loadJSON} className="hidden" />
+          </label>
+          <label className="flex items-center gap-1.5 px-3 py-1.5 text-stone-600 hover:bg-stone-100 rounded-md text-sm cursor-pointer" title="Import Image to Pixel Art">
+            <ImagePlus size={16} /> <span className="hidden sm:inline">Import</span>
+            <input type="file" accept="image/*" onChange={handleImageImport} className="hidden" />
           </label>
           <button onClick={saveJSON} className="flex items-center gap-1.5 px-3 py-1.5 text-stone-600 hover:bg-stone-100 rounded-md text-sm">
             <Save size={16} /> <span className="hidden sm:inline">Save</span>

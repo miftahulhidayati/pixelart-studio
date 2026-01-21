@@ -6,7 +6,7 @@ import { FloatingReference } from './components/FloatingReference';
 import { useCanvas } from './hooks/useCanvas';
 import { useDrawing } from './hooks/useDrawing';
 import { useHistory } from './hooks/useHistory';
-import { createGridData } from './utils';
+import { createGridData, processImageToGrid } from './utils';
 import { DEFAULT_SIZE, MAX_SIZE, BASE_CELL_SIZE, INITIAL_HISTORY, Tool } from './constants';
 
 interface HoverPos {
@@ -206,6 +206,29 @@ function App() {
     reader.readAsDataURL(file);
   };
 
+  // Image Import Handler
+  const handleImageImport = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Use current max dimension as limit, or default to MAX_SIZE if it's too small
+    const limit = Math.max(width, height);
+
+    processImageToGrid(file, limit)
+      .then(({ width: newWidth, height: newHeight, grid }) => {
+          if (window.confirm(`Importing will resize grid to ${newWidth}x${newHeight} and clear current work. Continue?`)) {
+            setWidth(newWidth);
+            setHeight(newHeight);
+            setGridData(grid, false);
+            clearHistory();
+          }
+      })
+      .catch((err) => {
+        console.error(err);
+        alert("Failed to process image");
+      });
+  };
+
   // Pointer Handlers
   const handleCanvasPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
     setIsDrawing(true);
@@ -262,6 +285,7 @@ function App() {
         setExportScale={setExportScale}
         resizeGrid={resizeGrid}
         handleReferenceUpload={handleReferenceUpload}
+        handleImageImport={handleImageImport}
         onUndo={undo}
         onRedo={redo}
         canUndo={canUndo}
