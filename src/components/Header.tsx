@@ -1,20 +1,21 @@
+import { useState } from 'react';
 import {
   Download,
   Trash2,
   Save,
-  Upload,
+  FolderOpen,
   Check,
   Image as ImageIcon,
   ZoomIn,
-  ZoomOut
+  ZoomOut,
+  Undo2,
+  Redo2
 } from 'lucide-react';
 import { MAX_SIZE } from '../constants';
 
 interface HeaderProps {
   width: number;
   height: number;
-  setWidth: (w: number) => void;
-  setHeight: (h: number) => void;
   zoom: number;
   handleZoomIn: () => void;
   handleZoomOut: () => void;
@@ -25,15 +26,17 @@ interface HeaderProps {
   exportPNG: () => void;
   exportScale: number;
   setExportScale: (scale: number) => void;
-  resizeGrid: () => void;
+  resizeGrid: (newWidth: number, newHeight: number) => void;
   handleReferenceUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onUndo: () => void;
+  onRedo: () => void;
+  canUndo: boolean;
+  canRedo: boolean;
 }
 
 export function Header({
   width,
   height,
-  setWidth,
-  setHeight,
   zoom,
   handleZoomIn,
   handleZoomOut,
@@ -45,8 +48,20 @@ export function Header({
   exportScale,
   setExportScale,
   resizeGrid,
-  handleReferenceUpload
+  handleReferenceUpload,
+  onUndo,
+  onRedo,
+  canUndo,
+  canRedo
 }: HeaderProps) {
+  // Staged grid dimensions - only apply when Set is clicked
+  const [stagedWidth, setStagedWidth] = useState(width);
+  const [stagedHeight, setStagedHeight] = useState(height);
+
+  const handleSetGrid = () => {
+    resizeGrid(stagedWidth, stagedHeight);
+  };
+
   return (
     <header className="bg-white border-b border-stone-200 px-6 py-3 flex flex-wrap items-center justify-between shadow-sm sticky top-0 z-20">
       <div className="flex items-center gap-2 mb-2 md:mb-0">
@@ -55,25 +70,32 @@ export function Header({
       </div>
 
       <div className="flex items-center gap-4 flex-wrap">
-        {/* Dimension Controls */}
+        {/* Dimension Controls - Staged */}
         <div className="flex items-center gap-2 text-sm bg-stone-50 p-1.5 rounded-lg border border-stone-200">
           <span className="text-stone-400 px-1 text-xs uppercase font-bold">Grid</span>
           <input
             type="number"
-            value={width}
+            value={stagedWidth}
+            min={1}
             max={MAX_SIZE}
-            onChange={(e) => setWidth(Number(e.target.value))}
+            onChange={(e) => setStagedWidth(Number(e.target.value))}
             className="w-12 p-1 bg-white border border-stone-200 rounded text-center"
           />
           <span className="text-stone-400">x</span>
           <input
             type="number"
-            value={height}
+            value={stagedHeight}
+            min={1}
             max={MAX_SIZE}
-            onChange={(e) => setHeight(Number(e.target.value))}
+            onChange={(e) => setStagedHeight(Number(e.target.value))}
             className="w-12 p-1 bg-white border border-stone-200 rounded text-center"
           />
-          <button onClick={resizeGrid} className="px-3 py-1 bg-stone-200 hover:bg-stone-300 rounded text-xs font-semibold">Set</button>
+          <button
+            onClick={handleSetGrid}
+            className="px-3 py-1 bg-stone-200 hover:bg-stone-300 rounded text-xs font-semibold"
+          >
+            Set
+          </button>
         </div>
 
         <div className="h-6 w-px bg-stone-300 hidden md:block" />
@@ -88,6 +110,28 @@ export function Header({
           </span>
           <button onClick={handleZoomIn} className="p-1 hover:bg-stone-200 rounded text-stone-600" title="Zoom In">
             <ZoomIn size={16} />
+          </button>
+        </div>
+
+        <div className="h-6 w-px bg-stone-300 hidden md:block" />
+
+        {/* Undo/Redo */}
+        <div className="flex items-center gap-1 bg-stone-50 p-1 rounded-lg border border-stone-200">
+          <button
+            onClick={onUndo}
+            disabled={!canUndo}
+            className={`p-1.5 rounded ${canUndo ? 'hover:bg-stone-200 text-stone-600' : 'text-stone-300 cursor-not-allowed'}`}
+            title="Undo (Ctrl+Z)"
+          >
+            <Undo2 size={16} />
+          </button>
+          <button
+            onClick={onRedo}
+            disabled={!canRedo}
+            className={`p-1.5 rounded ${canRedo ? 'hover:bg-stone-200 text-stone-600' : 'text-stone-300 cursor-not-allowed'}`}
+            title="Redo (Ctrl+Shift+Z)"
+          >
+            <Redo2 size={16} />
           </button>
         </div>
 
@@ -108,8 +152,8 @@ export function Header({
             {confirmClear ? <Check size={16} /> : <Trash2 size={16} />}
             <span className="hidden sm:inline">{confirmClear ? 'Confirm?' : 'Clear'}</span>
           </button>
-          <label className="flex items-center gap-1.5 px-3 py-1.5 text-stone-600 hover:bg-stone-100 rounded-md text-sm cursor-pointer">
-            <Upload size={16} /> <span className="hidden sm:inline">Load</span>
+          <label className="flex items-center gap-1.5 px-3 py-1.5 text-stone-600 hover:bg-stone-100 rounded-md text-sm cursor-pointer" title="Open saved project (.json)">
+            <FolderOpen size={16} /> <span className="hidden sm:inline">Open</span>
             <input type="file" accept=".json" onChange={loadJSON} className="hidden" />
           </label>
           <button onClick={saveJSON} className="flex items-center gap-1.5 px-3 py-1.5 text-stone-600 hover:bg-stone-100 rounded-md text-sm">

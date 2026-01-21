@@ -2,9 +2,10 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { Header } from './components/Header';
 import { Toolbar } from './components/Toolbar';
 import { Canvas } from './components/Canvas';
-import { ReferencePanel } from './components/ReferencePanel';
+import { FloatingReference } from './components/FloatingReference';
 import { useCanvas } from './hooks/useCanvas';
 import { useDrawing } from './hooks/useDrawing';
+import { useHistory } from './hooks/useHistory';
 import { createGridData } from './utils';
 import { DEFAULT_SIZE, MAX_SIZE, BASE_CELL_SIZE, INITIAL_HISTORY, Tool } from './constants';
 
@@ -23,7 +24,17 @@ function App() {
   // Grid State
   const [width, setWidth] = useState(DEFAULT_SIZE);
   const [height, setHeight] = useState(DEFAULT_SIZE);
-  const [gridData, setGridData] = useState(() => createGridData(DEFAULT_SIZE, DEFAULT_SIZE));
+
+  // Use history hook for undo/redo
+  const {
+    state: gridData,
+    setState: setGridData,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+    clearHistory
+  } = useHistory<(string | null)[]>(createGridData(DEFAULT_SIZE, DEFAULT_SIZE));
 
   // Tool State
   const [activeTool, setActiveTool] = useState<Tool>('pencil');
@@ -45,13 +56,12 @@ function App() {
 
   // Refs
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const referenceCanvasRef = useRef<HTMLCanvasElement>(null);
 
   // Derived Values
   const currentCellSize = BASE_CELL_SIZE * zoom;
 
-  // Update History
-  const updateHistory = useCallback((newColor: string) => {
+  // Update Color History
+  const updateColorHistory = useCallback((newColor: string) => {
     if (!newColor) return;
     setHistory(prev => {
       if (prev.includes(newColor)) return [newColor, ...prev.filter(c => c !== newColor)];
@@ -70,7 +80,7 @@ function App() {
   });
 
   // Drawing Hook
-  const { getIndexFromCoords, handlePointerAction } = useDrawing({
+  const { handlePointerAction } = useDrawing({
     gridData,
     setGridData,
     width,
@@ -80,24 +90,48 @@ function App() {
     color,
     setColor,
     setActiveTool,
-    updateHistory
+    updateHistory: updateColorHistory
   });
+
+  // Keyboard shortcuts for undo/redo
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
+        e.preventDefault();
+        if (e.shiftKey) {
+          redo();
+        } else {
+          undo();
+        }
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [undo, redo]);
 
   // Zoom Handlers
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.25, 3));
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.25, 0.5));
 
-  // Grid Management
-  const resizeGrid = () => {
-    if (width > MAX_SIZE || height > MAX_SIZE) {
+  // Grid Management - now accepts dimensions from Header
+  const resizeGrid = (newWidth: number, newHeight: number) => {
+    if (newWidth > MAX_SIZE || newHeight > MAX_SIZE) {
       alert(`Max Size is ${MAX_SIZE}x${MAX_SIZE}`);
+      return;
+    }
+    if (newWidth < 1 || newHeight < 1) {
+      alert('Minimum size is 1x1');
       return;
     }
     const hasData = gridData.some(c => c !== null);
     if (hasData) {
       if (!window.confirm("Resizing will clear current canvas. Continue?")) return;
     }
-    setGridData(createGridData(width, height));
+    setWidth(newWidth);
+    setHeight(newHeight);
+    setGridData(createGridData(newWidth, newHeight), false);
+    clearHistory();
   };
 
   const clearGrid = () => {
@@ -152,7 +186,8 @@ function App() {
         if (data.width && data.height && data.grid) {
           setWidth(data.width);
           setHeight(data.height);
-          setGridData(data.grid);
+          setGridData(data.grid, false);
+          clearHistory();
         }
       } catch (err) {
         console.error(err);
@@ -215,8 +250,6 @@ function App() {
       <Header
         width={width}
         height={height}
-        setWidth={setWidth}
-        setHeight={setHeight}
         zoom={zoom}
         handleZoomIn={handleZoomIn}
         handleZoomOut={handleZoomOut}
@@ -229,6 +262,10 @@ function App() {
         setExportScale={setExportScale}
         resizeGrid={resizeGrid}
         handleReferenceUpload={handleReferenceUpload}
+        onUndo={undo}
+        onRedo={redo}
+        canUndo={canUndo}
+        canRedo={canRedo}
       />
 
       <div className="flex flex-1 overflow-hidden">
@@ -237,7 +274,7 @@ function App() {
           setActiveTool={setActiveTool}
           color={color}
           setColor={setColor}
-          updateHistory={updateHistory}
+          updateHistory={updateColorHistory}
           history={history}
           showGrid={showGrid}
           setShowGrid={setShowGrid}
@@ -253,19 +290,20 @@ function App() {
           onPointerDown={handleCanvasPointerDown}
           onPointerMove={handleCanvasPointerMove}
           onPointerLeave={() => setHoverPos(null)}
+          onZoomChange={setZoom}
         />
-
-        {referenceImg && (
-          <ReferencePanel
-            referenceImg={referenceImg}
-            referenceCanvasRef={referenceCanvasRef}
-            setReferenceImg={setReferenceImg}
-            setColor={setColor}
-            updateHistory={updateHistory}
-            setActiveTool={() => setActiveTool('pencil')}
-          />
-        )}
       </div>
+
+      {/* Floating Reference Image */}
+      {referenceImg && (
+        <FloatingReference
+          referenceImg={referenceImg}
+          setReferenceImg={setReferenceImg}
+          setColor={setColor}
+          updateHistory={updateColorHistory}
+          setActiveTool={() => setActiveTool('pencil')}
+        />
+      )}
     </div>
   );
 }
