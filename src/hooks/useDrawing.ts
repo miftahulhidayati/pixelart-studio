@@ -3,7 +3,7 @@ import type { Tool } from '../constants';
 
 interface UseDrawingProps {
     gridData: (string | null)[];
-    setGridData: React.Dispatch<React.SetStateAction<(string | null)[]>>;
+    setGridData: (newState: (string | null)[], recordHistory?: boolean) => void;
     width: number;
     height: number;
     currentCellSize: number;
