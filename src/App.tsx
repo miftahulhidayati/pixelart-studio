@@ -6,7 +6,7 @@ import { FloatingReference } from './components/FloatingReference';
 import { useCanvas } from './hooks/useCanvas';
 import { useDrawing } from './hooks/useDrawing';
 import { useHistory } from './hooks/useHistory';
-import { createGridData, processImageToGrid } from './utils';
+import { createGridData, processImageToGrid, getPixelsInsidePolygon, getPixelsInsideRect } from './utils';
 import { DEFAULT_SIZE, MAX_SIZE, BASE_CELL_SIZE, INITIAL_HISTORY, Tool } from './constants';
 
 interface HoverPos {
@@ -18,6 +18,11 @@ interface ProjectData {
   width: number;
   height: number;
   grid: (string | null)[];
+}
+
+interface Point {
+  x: number;
+  y: number;
 }
 
 function App() {
@@ -44,6 +49,19 @@ function App() {
   const [history, setHistory] = useState<string[]>(INITIAL_HISTORY);
   const [exportScale, setExportScale] = useState(10);
   const [confirmClear, setConfirmClear] = useState(false);
+
+  // Lasso & Selection State
+  const [selection, setSelection] = useState<Set<number> | null>(null);
+  const [selectionPath, setSelectionPath] = useState<Point[]>([]); // For lasso or rect start/end
+  const [isSelecting, setIsSelecting] = useState(false);
+  const [selectionMode, setSelectionMode] = useState<'all' | 'content'>('all');
+  const [selectionShape, setSelectionShape] = useState<'rect' | 'freehand'>('rect');
+
+  // Move/Drag State
+  const [isMoving, setIsMoving] = useState(false);
+  const [dragStart, setDragStart] = useState<Point | null>(null);
+  const [moveOffset, setMoveOffset] = useState<Point>({ x: 0, y: 0 });
+  const [floatingBuffer, setFloatingBuffer] = useState<Map<number, string> | null>(null);
 
   // Zoom State
   const [zoom, setZoom] = useState(1);
@@ -76,11 +94,16 @@ function App() {
     width,
     height,
     showGrid,
-    currentCellSize
+    currentCellSize,
+    selection,
+    lassoPath: selectionPath, // reuse prop but it might need renaming in useCanvas too, for now mapped
+    isRectSelection: selectionShape === 'rect',
+    moveOffset,
+    floatingBuffer
   });
 
   // Drawing Hook
-  const { handlePointerAction } = useDrawing({
+  const { handlePointerAction, getIndexFromCoords } = useDrawing({
     gridData,
     setGridData,
     width,
@@ -93,7 +116,7 @@ function App() {
     updateHistory: updateColorHistory
   });
 
-  // Keyboard shortcuts for undo/redo
+  // Keyboard shortcuts for undo/redo & delete
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key === 'z') {
@@ -104,17 +127,53 @@ function App() {
           undo();
         }
       }
+
+      // Delete selection
+      if (e.key === 'Backspace' || e.key === 'Delete') {
+        if (selection && selection.size > 0 && !isMoving) {
+           const newGrid = [...gridData];
+           selection.forEach(idx => {
+             newGrid[idx] = null;
+           });
+           setGridData(newGrid);
+           setSelection(null); // Clear selection after delete? Or keep it? Usually keep selection but empty pixels.
+        }
+      }
+
+      // Escape to cancel selection
+      if (e.key === 'Escape') {
+          if (isSelecting) {
+              setIsSelecting(false);
+              setSelectionPath([]);
+          } else if (isMoving) {
+              // Cancel move - restore pixels
+              // This is complex, for now just drop selection
+              // Ideally: restore floating buffer to original position
+               if (floatingBuffer) {
+                  const newGrid = [...gridData];
+                  floatingBuffer.forEach((clr, idx) => {
+                      newGrid[idx] = clr;
+                  });
+                  setGridData(newGrid);
+              }
+              setIsMoving(false);
+              setFloatingBuffer(null);
+              setMoveOffset({ x: 0, y: 0 });
+          } else {
+             setSelection(null);
+          }
+      }
     };
 
     window.addEventListener('keydown', handleKeyDown);
     return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [undo, redo]);
+  }, [undo, redo, selection, gridData, isMoving, floatingBuffer, isSelecting]);
 
   // Zoom Handlers
   const handleZoomIn = () => setZoom(prev => Math.min(prev + 0.25, 3));
   const handleZoomOut = () => setZoom(prev => Math.max(prev - 0.25, 0.5));
 
-  // Grid Management - now accepts dimensions from Header
+  // Grid Management
   const resizeGrid = (newWidth: number, newHeight: number) => {
     if (newWidth > MAX_SIZE || newHeight > MAX_SIZE) {
       alert(`Max Size is ${MAX_SIZE}x${MAX_SIZE}`);
@@ -132,19 +191,21 @@ function App() {
     setHeight(newHeight);
     setGridData(createGridData(newWidth, newHeight), false);
     clearHistory();
+    setSelection(null);
   };
 
   const clearGrid = () => {
     if (confirmClear) {
       setGridData(createGridData(width, height));
       setConfirmClear(false);
+      setSelection(null);
     } else {
       setConfirmClear(true);
       setTimeout(() => setConfirmClear(false), 3000);
     }
   };
 
-  // Export/Import
+  // Export/Import logic preserved...
   const exportPNG = () => {
     const tempCanvas = document.createElement('canvas');
     tempCanvas.width = width * exportScale;
@@ -188,6 +249,7 @@ function App() {
           setHeight(data.height);
           setGridData(data.grid, false);
           clearHistory();
+          setSelection(null);
         }
       } catch (err) {
         console.error(err);
@@ -197,7 +259,6 @@ function App() {
     reader.readAsText(file);
   };
 
-  // Reference Image Handler
   const handleReferenceUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -206,12 +267,9 @@ function App() {
     reader.readAsDataURL(file);
   };
 
-  // Image Import Handler
   const handleImageImport = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-
-    // Use current max dimension as limit, or default to MAX_SIZE if it's too small
     const limit = Math.max(width, height);
 
     processImageToGrid(file, limit)
@@ -221,6 +279,7 @@ function App() {
             setHeight(newHeight);
             setGridData(grid, false);
             clearHistory();
+            setSelection(null);
           }
       })
       .catch((err) => {
@@ -229,12 +288,137 @@ function App() {
       });
   };
 
-  // Pointer Handlers
+  // --- SELECTION HANDLERS ---
+
+  const handleSelectionDown = (e: React.PointerEvent<HTMLCanvasElement>, rect: DOMRect) => {
+      const x = e.clientX - rect.left;
+      const y = e.clientY - rect.top;
+      const index = getIndexFromCoords(x, y);
+
+      // Check if clicking inside existing selection (to Move)
+      if (selection && index !== null && selection.has(index)) {
+          // Prepare to move
+          setIsMoving(true);
+          setDragStart({ x: e.clientX, y: e.clientY });
+
+          // Cut pixels to buffer
+          const buffer = new Map<number, string>();
+          const newGrid = [...gridData];
+
+          selection.forEach(idx => {
+              const color = gridData[idx];
+              if (color) {
+                  buffer.set(idx, color);
+                  newGrid[idx] = null; // Clear from grid
+              }
+          });
+
+          setFloatingBuffer(buffer);
+          setGridData(newGrid, false); // Don't save history yet, wait for commit
+      } else {
+          // Start new selection
+          setSelection(null);
+          setIsSelecting(true);
+          setSelectionPath([{ x, y }]); // Start point
+      }
+  };
+
+  const handleSelectionMove = (e: React.PointerEvent<HTMLCanvasElement>, rect: DOMRect) => {
+      if (isMoving && dragStart) {
+          const dx = e.clientX - dragStart.x;
+          const dy = e.clientY - dragStart.y;
+          setMoveOffset({ x: dx, y: dy });
+      } else if (isSelecting) {
+          const x = e.clientX - rect.left;
+          const y = e.clientY - rect.top;
+
+          if (selectionShape === 'rect') {
+               // For Rect: [Start, Current]
+               setSelectionPath(prev => [prev[0], { x, y }]);
+          } else {
+               // For Freehand: Append
+               setSelectionPath(prev => [...prev, { x, y }]);
+          }
+      }
+  };
+
+  const handleSelectionUp = () => {
+      if (isMoving && floatingBuffer) {
+           // Commit Move
+           const moveGridX = Math.round(moveOffset.x / currentCellSize);
+           const moveGridY = Math.round(moveOffset.y / currentCellSize);
+
+           const newGrid = [...gridData];
+           const newSelection = new Set<number>();
+
+           floatingBuffer.forEach((color, oldIdx) => {
+               const oldX = oldIdx % width;
+               const oldY = Math.floor(oldIdx / width);
+
+               const newX = oldX + moveGridX;
+               const newY = oldY + moveGridY;
+
+               if (newX >= 0 && newX < width && newY >= 0 && newY < height) {
+                   const newIdx = newY * width + newX;
+                   newGrid[newIdx] = color;
+                   newSelection.add(newIdx);
+               }
+           });
+
+           setGridData(newGrid); // Commit this state to history?
+           setSelection(newSelection);
+
+           // cleanup
+           setIsMoving(false);
+           setFloatingBuffer(null);
+           setDragStart(null);
+           setMoveOffset({ x: 0, y: 0 });
+
+      } else if (isSelecting) {
+          setIsSelecting(false);
+
+          let indices: number[] = [];
+
+          if (selectionShape === 'rect' && selectionPath.length >= 2) {
+              indices = getPixelsInsideRect(selectionPath[0], selectionPath[selectionPath.length - 1], width, height, currentCellSize);
+          } else if (selectionShape === 'freehand') {
+              indices = getPixelsInsidePolygon(selectionPath, width, height, currentCellSize);
+          }
+
+          if (selectionMode === 'content') {
+            indices = indices.filter(idx => gridData[idx] !== null);
+          }
+
+          if (indices.length > 0) {
+              setSelection(new Set(indices));
+          }
+           setSelectionPath([]);
+      }
+  };
+
+  // Wrapper for all Pointer logic
   const handleCanvasPointerDown = (e: React.PointerEvent<HTMLCanvasElement>) => {
-    setIsDrawing(true);
     const canvas = canvasRef.current;
-    if (canvas) {
-      handlePointerAction(e, canvas.getBoundingClientRect());
+    if (!canvas) return;
+    const rect = canvas.getBoundingClientRect();
+
+    if (activeTool === 'select') {
+        handleSelectionDown(e, rect);
+    } else {
+        // If we have a selection and use another tool
+        // If we click inside selection with Fill, constrain to selection?
+        // For now, let's say standard tools ignore selection mask (simple MVP)
+        // OR: Deselect on tool use?
+        // Let's keep selection until explicitly cleared or tool behavior uses it.
+        // Actually user request: "ubah warna".
+
+        // MVP: If fill tool is used and selection exists, only fill inside selection?
+        // That requires deep integration into useDrawing.
+
+        // For now, let's just clear selection if drawing starts outside lasso mode?
+        // Or keep it. Let's keep it.
+        setIsDrawing(true);
+        handlePointerAction(e, rect);
     }
   };
 
@@ -256,17 +440,34 @@ function App() {
       setHoverPos(null);
     }
 
-    if (isDrawing) {
+    if (activeTool === 'select') {
+        handleSelectionMove(e, rect);
+    } else if (isDrawing) {
       handlePointerAction(e, rect);
     }
   };
 
-  // Global Mouse Up
   useEffect(() => {
-    const handleUp = () => setIsDrawing(false);
+    const handleUp = () => {
+        if (activeTool === 'select') {
+            handleSelectionUp();
+        } else {
+            setIsDrawing(false);
+        }
+    };
     window.addEventListener('pointerup', handleUp);
     return () => window.removeEventListener('pointerup', handleUp);
-  }, []);
+  }, [activeTool, isSelecting, isMoving, moveOffset, floatingBuffer, selectionPath, gridData, selectionShape, selectionMode]);
+
+  // Handle Fill Selection Action
+  const fillSelection = () => {
+      if (!selection || selection.size === 0) return;
+      const newGrid = [...gridData];
+      selection.forEach(idx => {
+          newGrid[idx] = color;
+      });
+      setGridData(newGrid);
+  };
 
   return (
     <div className="min-h-screen bg-[#F9F6F0] text-stone-700 font-sans flex flex-col">
@@ -302,7 +503,31 @@ function App() {
           history={history}
           showGrid={showGrid}
           setShowGrid={setShowGrid}
+          selectionMode={activeTool === 'select' ? selectionMode : undefined}
+          setSelectionMode={activeTool === 'select' ? setSelectionMode : undefined}
+          selectionShape={activeTool === 'select' ? selectionShape : undefined}
+          setSelectionShape={activeTool === 'select' ? setSelectionShape : undefined}
         />
+
+        {/* Selection Context Actions (Visible when selection exists) */}
+        {selection && selection.size > 0 && (
+             <div className="absolute top-20 left-1/2 transform -translate-x-1/2 bg-white px-4 py-2 rounded-lg shadow-xl flex gap-4 z-50 border border-stone-200">
+                <span className="font-bold text-sm self-center">{selection.size} px selected</span>
+                <button onClick={fillSelection} className="bg-stone-100 hover:bg-stone-200 px-3 py-1 rounded text-sm transition-colors">
+                    Fill
+                </button>
+                 <button onClick={() => {
+                     const newGrid = [...gridData];
+                     selection.forEach(idx => newGrid[idx] = null);
+                     setGridData(newGrid);
+                 }} className="bg-red-50 hover:bg-red-100 text-red-600 px-3 py-1 rounded text-sm transition-colors">
+                    Delete
+                </button>
+                <button onClick={() => setSelection(null)} className="text-stone-400 hover:text-stone-600 text-sm">
+                    Cancel
+                </button>
+             </div>
+        )}
 
         <Canvas
           canvasRef={canvasRef}

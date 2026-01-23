@@ -1,4 +1,4 @@
-import { Pencil, Eraser, PaintBucket, Pipette } from 'lucide-react';
+import { Pencil, Eraser, PaintBucket, Pipette, MousePointer2, RectangleHorizontal, Lasso } from 'lucide-react';
 import { PALETTES, Tool } from '../constants';
 
 interface ToolbarProps {
@@ -10,14 +10,21 @@ interface ToolbarProps {
   history: string[];
   showGrid: boolean;
   setShowGrid: (show: boolean) => void;
+  selectionMode?: 'all' | 'content';
+  setSelectionMode?: (mode: 'all' | 'content') => void;
+  selectionShape?: 'rect' | 'freehand';
+  setSelectionShape?: (shape: 'rect' | 'freehand') => void;
 }
+
 
 const TOOLS = [
   { id: 'pencil' as Tool, icon: Pencil, label: 'Pencil' },
   { id: 'eraser' as Tool, icon: Eraser, label: 'Eraser' },
   { id: 'fill' as Tool, icon: PaintBucket, label: 'Fill' },
-  { id: 'picker' as Tool, icon: Pipette, label: 'Pick' }
+  { id: 'picker' as Tool, icon: Pipette, label: 'Pick' },
+  { id: 'select' as Tool, icon: MousePointer2, label: 'Select' }
 ];
+
 
 export function Toolbar({
   activeTool,
@@ -27,12 +34,17 @@ export function Toolbar({
   updateHistory,
   history,
   showGrid,
-  setShowGrid
+  setShowGrid,
+  selectionMode,
+  setSelectionMode,
+  selectionShape,
+  setSelectionShape
 }: ToolbarProps) {
+
   return (
     <aside className="w-64 bg-white border-r border-stone-200 p-4 flex flex-col gap-6 overflow-y-auto z-10 shrink-0">
       {/* Tools */}
-      <div className="grid grid-cols-4 gap-2">
+      <div className="flex flex-wrap gap-2">
         {TOOLS.map(t => (
           <button
             key={t.id}
@@ -40,12 +52,63 @@ export function Toolbar({
             title={t.label}
             className={`p-3 rounded-xl flex items-center justify-center transition-all ${
               activeTool === t.id ? 'bg-stone-800 text-white scale-105 shadow-md' : 'bg-stone-50 text-stone-500 hover:bg-stone-100'
-            }`}
+            } flex-1 min-w-[3rem]`}
           >
             <t.icon size={20} />
           </button>
         ))}
       </div>
+
+      {/* Selection Options */}
+      {selectionMode && setSelectionMode && selectionShape && setSelectionShape && (
+         <div className="space-y-3">
+             <div className="bg-stone-50 p-3 rounded-xl border border-stone-100 space-y-2">
+                 <h3 className="text-xs font-bold text-stone-400 uppercase">Input Shape</h3>
+                 <div className="flex gap-1 bg-stone-200 p-1 rounded-lg">
+                     <button
+                        onClick={() => setSelectionShape('rect')}
+                        className={`flex-1 py-1.5 px-2 flex justify-center items-center rounded-md transition-all ${
+                            selectionShape === 'rect' ? 'bg-white shadow-sm text-stone-800' : 'text-stone-500 hover:text-stone-700'
+                        }`}
+                        title="Rectangle"
+                     >
+                        <RectangleHorizontal size={16} />
+                     </button>
+                     <button
+                        onClick={() => setSelectionShape('freehand')}
+                        className={`flex-1 py-1.5 px-2 flex justify-center items-center rounded-md transition-all ${
+                            selectionShape === 'freehand' ? 'bg-white shadow-sm text-stone-800' : 'text-stone-500 hover:text-stone-700'
+                        }`}
+                        title="Freehand (Lasso)"
+                     >
+                        <Lasso size={16} />
+                     </button>
+                 </div>
+             </div>
+
+             <div className="bg-stone-50 p-3 rounded-xl border border-stone-100 space-y-2">
+                 <h3 className="text-xs font-bold text-stone-400 uppercase">Selection Mode</h3>
+                 <div className="flex gap-1 bg-stone-200 p-1 rounded-lg">
+                     <button
+                        onClick={() => setSelectionMode('all')}
+                        className={`flex-1 py-1.5 px-2 text-xs font-medium rounded-md transition-all ${
+                            selectionMode === 'all' ? 'bg-white shadow-sm text-stone-800' : 'text-stone-500 hover:text-stone-700'
+                        }`}
+                     >
+                        Normal
+                     </button>
+                     <button
+                        onClick={() => setSelectionMode('content')}
+                        className={`flex-1 py-1.5 px-2 text-xs font-medium rounded-md transition-all ${
+                            selectionMode === 'content' ? 'bg-white shadow-sm text-stone-800' : 'text-stone-500 hover:text-stone-700'
+                        }`}
+                     >
+                        Smart
+                     </button>
+                 </div>
+             </div>
+         </div>
+      )}
 
       {/* Color Picker */}
       <div className="space-y-3">

@@ -14,4 +14,4 @@ export const PALETTES: Record<string, string[]> = {
 
 export const INITIAL_HISTORY = ['#000000', '#FFFFFF', '#FF5733', '#33FF57', '#3357FF'];
 
-export type Tool = 'pencil' | 'eraser' | 'fill' | 'picker';
+export type Tool = 'pencil' | 'eraser' | 'fill' | 'picker' | 'select';
